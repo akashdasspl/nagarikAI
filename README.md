@@ -43,12 +43,8 @@ uvicorn main:app --reload
 Visit http://localhost:8000/docs for API documentation.
 
 ### Frontend Setup
-
-Coming soon in Task 5.1
-
-## Development Status
-
-This is an MVP implementation for hackathon demonstration. See `.kiro/specs/nagarik-ai-platform/tasks.md` for the complete implementation plan.
+npm i
+npm run dev
 
 ## Technology Stack
 
