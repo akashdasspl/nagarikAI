@@ -359,6 +359,174 @@ async def discover_beneficiaries(death_record: DeathRecordInput):
         )
 
 
+@app.post("/api/beneficiary/search-by-aadhaar", response_model=BeneficiaryDiscoveryResponse)
+async def search_by_aadhaar(aadhaar_request: Dict[str, str]):
+    """
+    Search for a person by Aadhaar number and find their family members
+    
+    Uses Entity Resolver to find the person in Aadhaar database, then searches
+    for family members in Ration Card database to identify potential beneficiaries
+    for various welfare schemes.
+    """
+    try:
+        aadhaar_number = aadhaar_request.get('aadhaar_number')
+        
+        if not aadhaar_number or len(aadhaar_number) != 12:
+            raise HTTPException(
+                status_code=400,
+                detail="Valid 12-digit Aadhaar number is required"
+            )
+        
+        # Load Aadhaar records to find the person
+        aadhaar_records = entity_resolver.load_csv_data("aadhaar_records.csv")
+        
+        # Find the person by Aadhaar number
+        person_record = None
+        for record in aadhaar_records:
+            if record.get('aadhaar_number') == aadhaar_number:
+                person_record = record
+                break
+        
+        if not person_record:
+            return BeneficiaryDiscoveryResponse(
+                success=True,
+                message="No record found for this Aadhaar number",
+                death_record_id=aadhaar_number,
+                deceased_name="",
+                beneficiaries=[],
+                total_found=0
+            )
+        
+        # Search for family members in Ration Card database
+        ration_records = entity_resolver.load_csv_data("ration_card_records.csv")
+        
+        # Calculate age once (outside the loop)
+        dob_str = person_record.get('date_of_birth', '')
+        age = 0
+        if dob_str:
+            try:
+                from datetime import datetime
+                dob = datetime.strptime(dob_str, '%Y-%m-%d')
+                today = datetime.now()
+                age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+            except:
+                age = int(person_record.get('age', 0))
+        else:
+            age = int(person_record.get('age', 0))
+        
+        gender = person_record.get('gender', '')
+        
+        # Determine eligible schemes once (not per ration card)
+        eligible_schemes = []
+        
+        if age >= 60:
+            eligible_schemes.append({
+                'scheme': 'old_age_pension',
+                'reason': f"Person is {age} years old, eligible for Old Age Pension (60+ years)"
+            })
+        
+        if gender == 'F' and age >= 18:
+            eligible_schemes.append({
+                'scheme': 'widow_pension',
+                'reason': f"Female family member, may be eligible for Widow Pension if spouse is deceased"
+            })
+        
+        # Find the best matching ration card for each scheme
+        scheme_best_matches = {}  # scheme_type -> (confidence, ration_record)
+        
+        # Find ration cards where this person might be listed
+        for ration_record in ration_records:
+            # Calculate name similarity
+            name_similarity = entity_resolver.calculate_name_similarity(
+                person_record.get('name', ''),
+                ration_record.get('head_of_family', '')
+            )
+            
+            # Calculate location similarity
+            person_location = f"{person_record.get('village', '')} {person_record.get('district', '')}"
+            ration_location = f"{ration_record.get('village', '')} {ration_record.get('district', '')}"
+            location_similarity = entity_resolver.calculate_location_similarity(
+                person_location,
+                ration_location
+            )
+            
+            # If there's a match (name + location), this is likely their family
+            if name_similarity >= 0.7 and location_similarity >= 0.7:
+                confidence = (name_similarity + location_similarity) / 2
+                
+                # Check for age-based schemes
+                for scheme_info in eligible_schemes:
+                    scheme_type = scheme_info['scheme']
+                    if scheme_type not in scheme_best_matches or confidence > scheme_best_matches[scheme_type][0]:
+                        scheme_best_matches[scheme_type] = (confidence, ration_record, scheme_info)
+                
+                # Check BPL eligibility from ration card type
+                if ration_record.get('card_type') == 'BPL':
+                    scheme_type = 'bpl_card'
+                    scheme_info = {
+                        'scheme': scheme_type,
+                        'reason': "Family has BPL ration card, eligible for BPL benefits"
+                    }
+                    if scheme_type not in scheme_best_matches or confidence > scheme_best_matches[scheme_type][0]:
+                        scheme_best_matches[scheme_type] = (confidence, ration_record, scheme_info)
+        
+        # Create beneficiary entries from best matches
+        beneficiaries = []
+        for scheme_type, (confidence, ration_record, scheme_info) in scheme_best_matches.items():
+            source_record = SourceRecord(
+                record_id=ration_record.get('card_number', ''),
+                database='ration_card',
+                matched_fields={
+                    'name': {'source': person_record.get('name', ''), 'target': ration_record.get('head_of_family', '')},
+                    'village': {'source': person_record.get('village', ''), 'target': ration_record.get('village', '')},
+                    'district': {'source': person_record.get('district', ''), 'target': ration_record.get('district', '')}
+                },
+                confidence_score=confidence
+            )
+            
+            beneficiary = PotentialBeneficiary(
+                beneficiary_name=person_record.get('name', ''),
+                relationship="self",
+                scheme_type=scheme_info['scheme'],
+                confidence_score=confidence,
+                eligibility_reasoning=scheme_info['reason'],
+                source_records=[source_record],
+                contact_info={
+                    'aadhaar_id': aadhaar_number,
+                    'address': f"{person_record.get('village', '')}, {person_record.get('district', '')}"
+                }
+            )
+            
+            beneficiaries.append(beneficiary)
+        
+        # Sort by confidence score
+        beneficiaries.sort(key=lambda b: b.confidence_score, reverse=True)
+        
+        response = BeneficiaryDiscoveryResponse(
+            success=True,
+            message=f"Found {len(beneficiaries)} potential scheme eligibilities" if beneficiaries else "Person found but no scheme eligibilities identified",
+            death_record_id=aadhaar_number,
+            deceased_name=person_record.get('name', ''),
+            beneficiaries=beneficiaries,
+            total_found=len(beneficiaries)
+        )
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Data file not found: {str(e)}"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error searching by Aadhaar: {str(e)}"
+        )
+
+
 @app.post("/api/grievance/submit", response_model=GrievanceResponse)
 async def submit_grievance(grievance_data: GrievanceCreate):
     """

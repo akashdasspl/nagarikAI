@@ -18,6 +18,7 @@ function BeneficiaryDiscovery() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([])
+  const [searchMode, setSearchMode] = useState<'death' | 'aadhaar'>('death')
   const [formData, setFormData] = useState({
     record_id: '',
     name: '',
@@ -28,6 +29,9 @@ function BeneficiaryDiscovery() {
     district: '',
     village: '',
   })
+  const [aadhaarFormData, setAadhaarFormData] = useState({
+    aadhaar_number: '',
+  })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -35,19 +39,30 @@ function BeneficiaryDiscovery() {
     setError(null)
     
     try {
-      // Prepare request payload matching backend DeathRecordInput model
-      const payload = {
-        record_id: formData.record_id,
-        name: formData.name,
-        father_name: formData.father_name,
-        date_of_death: formData.date_of_death,
-        age: parseInt(formData.age),
-        gender: formData.gender,
-        district: formData.district,
-        village: formData.village,
+      let endpoint = '/api/beneficiary/discover'
+      let payload: any
+      
+      if (searchMode === 'death') {
+        // Death record search
+        payload = {
+          record_id: formData.record_id,
+          name: formData.name,
+          father_name: formData.father_name,
+          date_of_death: formData.date_of_death,
+          age: parseInt(formData.age),
+          gender: formData.gender,
+          district: formData.district,
+          village: formData.village,
+        }
+      } else {
+        // Aadhaar search
+        endpoint = '/api/beneficiary/search-by-aadhaar'
+        payload = {
+          aadhaar_number: aadhaarFormData.aadhaar_number,
+        }
       }
       
-      const response = await fetch('/api/beneficiary/discover', {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -92,106 +107,167 @@ function BeneficiaryDiscovery() {
         {t('beneficiary.description')}
       </p>
 
-      <form onSubmit={handleSubmit} className="form">
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-          <div className="form-group">
-            <label>{t('beneficiary.deathRecordId')} *</label>
-            <input
-              type="text"
-              value={formData.record_id}
-              onChange={(e) => setFormData({ ...formData, record_id: e.target.value })}
-              placeholder="e.g., CDR001"
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label>{t('beneficiary.deceasedName')} *</label>
-            <input
-              type="text"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              placeholder="Full name of deceased"
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label>{t('beneficiary.fatherName')} *</label>
-            <input
-              type="text"
-              value={formData.father_name}
-              onChange={(e) => setFormData({ ...formData, father_name: e.target.value })}
-              placeholder="Father's name"
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label>{t('beneficiary.dateOfDeath')} *</label>
-            <input
-              type="date"
-              value={formData.date_of_death}
-              onChange={(e) => setFormData({ ...formData, date_of_death: e.target.value })}
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label>{t('beneficiary.age')} *</label>
-            <input
-              type="number"
-              value={formData.age}
-              onChange={(e) => setFormData({ ...formData, age: e.target.value })}
-              placeholder="Age"
-              min="0"
-              max="150"
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label>{t('beneficiary.gender')} *</label>
-            <select
-              value={formData.gender}
-              onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-              required
-            >
-              <option value="M">{t('beneficiary.male')}</option>
-              <option value="F">{t('beneficiary.female')}</option>
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label>{t('beneficiary.district')} *</label>
-            <input
-              type="text"
-              value={formData.district}
-              onChange={(e) => setFormData({ ...formData, district: e.target.value })}
-              placeholder="District name"
-              required
-            />
-          </div>
-
-          <div className="form-group">
-            <label>{t('beneficiary.village')} *</label>
-            <input
-              type="text"
-              value={formData.village}
-              onChange={(e) => setFormData({ ...formData, village: e.target.value })}
-              placeholder="Village name"
-              required
-            />
-          </div>
+      {/* Search Mode Toggle */}
+      <div style={{ marginBottom: '2rem' }}>
+        <div style={{ display: 'flex', gap: '1rem', backgroundColor: '#1a1a1a', padding: '0.5rem', borderRadius: '8px', width: 'fit-content' }}>
+          <button
+            type="button"
+            onClick={() => setSearchMode('death')}
+            style={{
+              padding: '0.75rem 1.5rem',
+              borderRadius: '6px',
+              border: 'none',
+              backgroundColor: searchMode === 'death' ? '#6366f1' : 'transparent',
+              color: searchMode === 'death' ? 'white' : '#888',
+              cursor: 'pointer',
+              fontWeight: 500,
+              transition: 'all 0.2s'
+            }}
+          >
+            🪦 Death Record Search
+          </button>
+          <button
+            type="button"
+            onClick={() => setSearchMode('aadhaar')}
+            style={{
+              padding: '0.75rem 1.5rem',
+              borderRadius: '6px',
+              border: 'none',
+              backgroundColor: searchMode === 'aadhaar' ? '#6366f1' : 'transparent',
+              color: searchMode === 'aadhaar' ? 'white' : '#888',
+              cursor: 'pointer',
+              fontWeight: 500,
+              transition: 'all 0.2s'
+            }}
+          >
+            🆔 Aadhaar Search
+          </button>
         </div>
+      </div>
+
+      <form onSubmit={handleSubmit} className="form">
+        {searchMode === 'death' ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+            <div className="form-group">
+              <label>{t('beneficiary.deathRecordId')} *</label>
+              <input
+                type="text"
+                value={formData.record_id}
+                onChange={(e) => setFormData({ ...formData, record_id: e.target.value })}
+                placeholder="e.g., CDR001"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label>{t('beneficiary.deceasedName')} *</label>
+              <input
+                type="text"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="Full name of deceased"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label>{t('beneficiary.fatherName')} *</label>
+              <input
+                type="text"
+                value={formData.father_name}
+                onChange={(e) => setFormData({ ...formData, father_name: e.target.value })}
+                placeholder="Father's name"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label>{t('beneficiary.dateOfDeath')} *</label>
+              <input
+                type="date"
+                value={formData.date_of_death}
+                onChange={(e) => setFormData({ ...formData, date_of_death: e.target.value })}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label>{t('beneficiary.age')} *</label>
+              <input
+                type="number"
+                value={formData.age}
+                onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+                placeholder="Age"
+                min="0"
+                max="150"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label>{t('beneficiary.gender')} *</label>
+              <select
+                value={formData.gender}
+                onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                required
+              >
+                <option value="M">{t('beneficiary.male')}</option>
+                <option value="F">{t('beneficiary.female')}</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label>{t('beneficiary.district')} *</label>
+              <input
+                type="text"
+                value={formData.district}
+                onChange={(e) => setFormData({ ...formData, district: e.target.value })}
+                placeholder="District name"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label>{t('beneficiary.village')} *</label>
+              <input
+                type="text"
+                value={formData.village}
+                onChange={(e) => setFormData({ ...formData, village: e.target.value })}
+                placeholder="Village name"
+                required
+              />
+            </div>
+          </div>
+        ) : (
+          <div style={{ maxWidth: '500px' }}>
+            <div className="form-group">
+              <label>Aadhaar Number *</label>
+              <input
+                type="text"
+                value={aadhaarFormData.aadhaar_number}
+                onChange={(e) => {
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 12)
+                  setAadhaarFormData({ aadhaar_number: value })
+                }}
+                placeholder="Enter 12-digit Aadhaar number"
+                pattern="[0-9]{12}"
+                maxLength={12}
+                required
+              />
+              <small style={{ color: '#888', marginTop: '0.5rem', display: 'block' }}>
+                Enter the 12-digit Aadhaar number to find family members and check scheme eligibility
+              </small>
+            </div>
+          </div>
+        )}
 
         <button type="submit" disabled={loading} className="btn-primary" style={{ marginTop: '1rem' }}>
           {loading ? (
             <span className="btn-loading">
               <span className="spinner" aria-hidden="true" />
-              {t('beneficiary.discovering')}
+              {searchMode === 'death' ? t('beneficiary.discovering') : 'Searching...'}
             </span>
-          ) : t('beneficiary.discover')}
+          ) : (searchMode === 'death' ? t('beneficiary.discover') : 'Search by Aadhaar')}
         </button>
       </form>
 
@@ -341,7 +417,9 @@ function BeneficiaryDiscovery() {
       {!loading && beneficiaries.length === 0 && !error && (
         <div className="info-box" style={{ marginTop: '2rem' }}>
           <p style={{ margin: 0, color: '#888' }}>
-            Enter death record details above to discover potential beneficiaries using AI-powered entity resolution across Civil Death Records, Ration Card Database, and Aadhaar Database.
+            {searchMode === 'death' 
+              ? 'Enter death record details above to discover potential beneficiaries using AI-powered entity resolution across Civil Death Records, Ration Card Database, and Aadhaar Database.'
+              : 'Enter an Aadhaar number to search for the person and their family members across government databases. The system will check eligibility for various welfare schemes.'}
           </p>
         </div>
       )}
